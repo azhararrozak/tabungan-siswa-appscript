@@ -3,7 +3,7 @@
  * Deploy this as a Web App with "Execute as: Me" and "Who has access: Anyone"
  */
 
-const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID_HERE'; // User needs to replace this
+const SPREADSHEET_ID = '1oPBmn5YoM-sNJpzX1chHGZFCbzJaYtm-SH_jbHoKrfo';
 
 function getSheet(name) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -162,7 +162,117 @@ function getStudent(id) {
   return students.find(s => s.id === id);
 }
 
-// ... (createStudent and updateStudent remain unchanged)
+function createStudent(data) {
+  const studentsSheet = getSheet('students');
+  const studentId = 'STU' + Utilities.formatDate(new Date(), "GMT+7", "yyyyMMddHHmmss");
+  const date = new Date().toISOString();
+  
+  const nis = String(data.nis || data.NIS || '').trim();
+  const name = String(data.name || data.Name || '').trim();
+  const className = String(data.class || data.Class || '').trim();
+  const parentName = String(data.parent_name || data.ParentName || '').trim();
+  const phone = String(data.phone || data.Phone || '').trim();
+  const photoUrl = String(data.photo_url || data.PhotoUrl || '').trim();
+  const status = String(data.status || data.Status || 'active').trim();
+
+  if (!nis || !name) {
+    throw new Error('NIS dan Nama siswa wajib diisi');
+  }
+
+  // Check if NIS already exists
+  const existingStudents = getStudents();
+  if (existingStudents.some(s => String(s.nis) === nis)) {
+    throw new Error('Siswa dengan NIS ' + nis + ' sudah terdaftar');
+  }
+
+  studentsSheet.appendRow([
+    studentId,
+    nis,
+    name,
+    className,
+    parentName,
+    phone,
+    photoUrl,
+    status,
+    date
+  ]);
+
+  // Create corresponding account for the student in accounts sheet
+  const accountsSheet = getSheet('accounts');
+  const accountId = 'ACC' + Utilities.formatDate(new Date(), "GMT+7", "yyyyMMddHHmmss");
+  const accountNumber = 'ACC' + nis;
+  
+  accountsSheet.appendRow([
+    accountId,
+    studentId,
+    accountNumber,
+    0, // initial_balance
+    0, // current_balance
+    date
+  ]);
+
+  SpreadsheetApp.flush();
+
+  return {
+    id: studentId,
+    nis: nis,
+    name: name,
+    class: className,
+    parent_name: parentName,
+    phone: phone,
+    photo_url: photoUrl,
+    status: status,
+    balance: 0,
+    created_at: date
+  };
+}
+
+function updateStudent(data) {
+  const studentsSheet = getSheet('students');
+  const studentData = studentsSheet.getDataRange().getValues();
+  studentData.shift(); // remove headers
+  
+  const studentId = data.id || data.Id;
+  if (!studentId) throw new Error('ID Siswa diperlukan');
+
+  const studentIndex = studentData.findIndex(row => row[0] === studentId);
+  if (studentIndex === -1) throw new Error('Siswa tidak ditemukan');
+
+  const rowIndex = studentIndex + 2;
+  const currentRow = studentData[studentIndex];
+
+  const nis = data.nis !== undefined ? String(data.nis).trim() : currentRow[1];
+  const name = data.name !== undefined ? String(data.name).trim() : currentRow[2];
+  const className = data.class !== undefined ? String(data.class).trim() : currentRow[3];
+  const parentName = data.parent_name !== undefined ? String(data.parent_name).trim() : currentRow[4];
+  const phone = data.phone !== undefined ? String(data.phone).trim() : currentRow[5];
+  const photoUrl = data.photo_url !== undefined ? String(data.photo_url).trim() : currentRow[6];
+  const status = data.status !== undefined ? String(data.status).trim() : currentRow[7];
+
+  studentsSheet.getRange(rowIndex, 2, 1, 7).setValues([[
+    nis,
+    name,
+    className,
+    parentName,
+    phone,
+    photoUrl,
+    status
+  ]]);
+
+  SpreadsheetApp.flush();
+
+  return {
+    id: studentId,
+    nis: nis,
+    name: name,
+    class: className,
+    parent_name: parentName,
+    phone: phone,
+    photo_url: photoUrl,
+    status: status,
+    created_at: currentRow[8]
+  };
+}
 
 function getTransactions() {
   const sheet = getSheet('transactions');
@@ -174,7 +284,6 @@ function getTransactions() {
   data.shift();
   
   // Hardcoded keys to match the appendRow order in createTransaction
-  // This fixes issues where Sheet headers might be missing 'status' or be out of order
   const keys = ['id', 'account_id', 'student_id', 'type', 'amount', 'method', 'note', 'status', 'date', 'created_by'];
   
   return data.map(row => {
@@ -198,8 +307,6 @@ function createTransaction(data, type) {
   const studentId = data.student_id || data.StudentId;
   const amount = Number(data.amount || data.Amount);
   
-  // Robust status handling: Default to 'pending'
-  // Only set to 'completed' if explicitly requested
   let status = 'pending';
   const inputStatus = data.status || data.Status;
   if (inputStatus && String(inputStatus).toLowerCase() === 'completed') {
@@ -209,21 +316,19 @@ function createTransaction(data, type) {
   // Get account
   const accountSheet = getSheet('accounts');
   const accData = accountSheet.getDataRange().getValues();
-  const headers = accData.shift();
+  accData.shift();
   const accIndex = accData.findIndex(row => row[1] === studentId);
   
-  if (accIndex === -1) throw new Error('Account not found');
+  if (accIndex === -1) throw new Error('Akun siswa tidak ditemukan. Pastikan siswa telah terdaftar.');
   
   const accountRow = accData[accIndex];
   const accId = accountRow[0];
   let currentBalance = Number(accountRow[4]);
 
-  // Check balance for withdrawals regardless of status (optional, but good practice)
   if (type === 'withdraw' && currentBalance < amount) {
-    throw new Error('Insufficient balance');
+    throw new Error('Saldo tidak mencukupi untuk penarikan.');
   }
 
-  // Update balance ONLY if status is completed
   if (status === 'completed') {
     if (type === 'deposit') currentBalance += amount;
     else currentBalance -= amount;
@@ -255,34 +360,35 @@ function createTransaction(data, type) {
 function approveTransaction(id) {
   const transSheet = getSheet('transactions');
   const transData = transSheet.getDataRange().getValues();
-  const transHeaders = transData.shift();
+  transData.shift();
   const transIndex = transData.findIndex(row => row[0] === id);
   
-  if (transIndex === -1) throw new Error('Transaction not found');
+  if (transIndex === -1) throw new Error('Transaksi tidak ditemukan');
   
   const transRow = transData[transIndex];
   const currentStatus = String(transRow[7]).toLowerCase();
   
-  if (currentStatus === 'completed') throw new Error('Transaction already completed');
+  if (currentStatus === 'completed') throw new Error('Transaksi sudah disetujui sebelumnya');
+  if (currentStatus === 'rejected') throw new Error('Transaksi yang ditolak tidak dapat disetujui');
   
   const studentId = transRow[2];
   const type = transRow[3];
   const amount = Number(transRow[4]);
   
-  // Update balance
+  // Update account balance
   const accountSheet = getSheet('accounts');
   const accData = accountSheet.getDataRange().getValues();
   accData.shift();
   const accIndex = accData.findIndex(row => row[1] === studentId);
   
-  if (accIndex === -1) throw new Error('Account not found');
+  if (accIndex === -1) throw new Error('Akun siswa tidak ditemukan');
   
   let currentBalance = Number(accData[accIndex][4]);
   
   if (type === 'deposit') {
     currentBalance += amount;
   } else {
-    if (currentBalance < amount) throw new Error('Insufficient balance');
+    if (currentBalance < amount) throw new Error('Saldo tidak mencukupi');
     currentBalance -= amount;
   }
   
@@ -298,18 +404,17 @@ function approveTransaction(id) {
 function rejectTransaction(id) {
   const transSheet = getSheet('transactions');
   const transData = transSheet.getDataRange().getValues();
-  const transHeaders = transData.shift();
+  transData.shift();
   const transIndex = transData.findIndex(row => row[0] === id);
   
-  if (transIndex === -1) throw new Error('Transaction not found');
+  if (transIndex === -1) throw new Error('Transaksi tidak ditemukan');
   
   const transRow = transData[transIndex];
   const currentStatus = String(transRow[7]).toLowerCase();
   
-  if (currentStatus === 'completed') throw new Error('Cannot reject a completed transaction');
-  if (currentStatus === 'rejected') throw new Error('Transaction already rejected');
+  if (currentStatus === 'completed') throw new Error('Tidak dapat menolak transaksi yang sudah disetujui');
+  if (currentStatus === 'rejected') throw new Error('Transaksi sudah ditolak sebelumnya');
   
-  // Update transaction status to rejected
   transSheet.getRange(transIndex + 2, 8).setValue('rejected');
   
   SpreadsheetApp.flush();
@@ -321,13 +426,13 @@ function getDashboardStats() {
   const accounts = getSheet('accounts').getDataRange().getValues();
   accounts.shift();
   
-  const totalSavings = accounts.reduce((sum, row) => sum + Number(row[4]), 0);
+  const totalSavings = accounts.reduce((sum, row) => sum + Number(row[4] || 0), 0);
   
   const transactions = getTransactions();
   const today = new Date().toISOString().split('T')[0];
   const todayDeposits = transactions
-    .filter(t => t.type === 'deposit' && t.date.startsWith(today))
-    .reduce((sum, t) => sum + Number(t.amount), 0);
+    .filter(t => t.type === 'deposit' && t.date && t.date.startsWith(today))
+    .reduce((sum, t) => sum + Number(t.amount || 0), 0);
 
   return {
     totalStudents: students.length,

@@ -1,46 +1,87 @@
 import { Student, Transaction, ApiResponse, DashboardStats, AuthResponse } from '../types';
 
-const GAS_API_URL = import.meta.env.VITE_GAS_API_URL;
-
-if (!GAS_API_URL || GAS_API_URL.includes('YOUR_SCRIPT_ID')) {
-  console.warn('PERINGATAN: VITE_GAS_API_URL belum dikonfigurasi. Silakan atur di Secrets panel AI Studio.');
+function getCleanGasUrl(): string {
+  const raw = (import.meta.env.VITE_GAS_API_URL as string) || '';
+  return raw.replace(/^["']|["']$/g, '').trim();
 }
 
-async function request<T>(url: string, options?: RequestInit): Promise<ApiResponse<T>> {
+const GAS_API_URL = getCleanGasUrl();
+
+async function request<T>(targetUrlOrAction: string, options?: RequestInit & { params?: Record<string, string> }): Promise<ApiResponse<T>> {
   try {
-    console.log(`API Request: ${url}`, options);
-    
-    // Check if fetch is available
-    if (typeof fetch === 'undefined') {
-      throw new Error('Fetch API is not available in this environment');
+    const isPost = options?.method === 'POST';
+    const isFullUrl = targetUrlOrAction.startsWith('http://') || targetUrlOrAction.startsWith('https://');
+
+    // 1. First priority: Use server proxy (/api/gas) to bypass browser CORS & redirect issues
+    try {
+      let proxyEndpoint = '/api/gas';
+      if (!isPost && isFullUrl && targetUrlOrAction.includes('?')) {
+        const queryString = targetUrlOrAction.split('?')[1];
+        proxyEndpoint = `/api/gas?${queryString}`;
+      }
+
+      const proxyRes = await fetch(proxyEndpoint, {
+        method: options?.method || 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: options?.body,
+      });
+
+      if (proxyRes.ok) {
+        const json = await proxyRes.json();
+        if (json && typeof json === 'object') {
+          return json;
+        }
+      } else {
+        const errorJson = await proxyRes.json().catch(() => null);
+        if (errorJson && errorJson.message) {
+          return {
+            success: false,
+            data: null as any,
+            message: errorJson.message,
+          };
+        }
+      }
+    } catch (proxyErr) {
+      console.warn('Proxy request failed, attempting direct fetch:', proxyErr);
     }
 
-    const response = await fetch(url, {
+    // 2. Second fallback: Direct fetch to Google Apps Script URL using text/plain (CORS friendly)
+    const directUrl = isFullUrl ? targetUrlOrAction : (GAS_API_URL || targetUrlOrAction);
+    if (!directUrl) {
+      return {
+        success: false,
+        data: null as any,
+        message: 'URL Google Apps Script belum disetel di .env',
+      };
+    }
+
+    const response = await fetch(directUrl, {
       ...options,
-      mode: 'cors',
       headers: {
         'Content-Type': 'text/plain;charset=utf-8',
         ...options?.headers,
       },
     });
 
-    console.log(`API Response Status: ${response.status}`);
-
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('API Error Response:', errorText);
-      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+      throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
     }
 
     const data = await response.json();
-    console.log('API Response Data:', data);
     return data;
   } catch (error: any) {
     console.error('API Request Error Details:', error);
+    let msg = error.message || 'Terjadi kesalahan koneksi ke server backend';
+    if (msg.includes('Failed to fetch') || error.name === 'TypeError') {
+      msg = 'Gagal menghubungi backend Google Apps Script. Pastikan Web App di-deploy dengan akses "Anyone" (Siapa saja).';
+    }
     return {
       success: false,
       data: null as any,
-      message: error.message || 'Terjadi kesalahan koneksi ke server'
+      message: msg,
     };
   }
 }
@@ -83,13 +124,12 @@ export const transactionApi = {
       body: JSON.stringify({
         action: 'deposit',
         ...data,
-        // Add PascalCase variants for compatibility
         Status: data.status,
         StudentId: data.student_id,
         Amount: data.amount,
         Method: data.method,
         Note: data.note,
-        CreatedBy: data.created_by
+        CreatedBy: data.created_by,
       }),
     });
   },
@@ -99,11 +139,10 @@ export const transactionApi = {
       body: JSON.stringify({
         action: 'withdraw',
         ...data,
-        // Add PascalCase variants for compatibility
         StudentId: data.student_id,
         Amount: data.amount,
         Method: data.method,
-        Note: data.note
+        Note: data.note,
       }),
     });
   },

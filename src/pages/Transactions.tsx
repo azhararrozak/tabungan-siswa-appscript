@@ -328,21 +328,21 @@ export const Transactions = () => {
               <span className="text-sm font-medium text-slate-500 shrink-0">Status:</span>
               <div className="flex gap-1">
                 <Button 
-                  variant={filterStatus === 'all' ? 'default' : 'outline'} 
+                  variant={filterStatus === 'all' ? 'primary' : 'outline'} 
                   size="sm" 
                   onClick={() => handleFilterChange('all')}
                 >
                   Semua
                 </Button>
                 <Button 
-                  variant={filterStatus === 'pending' ? 'default' : 'outline'} 
+                  variant={filterStatus === 'pending' ? 'primary' : 'outline'} 
                   size="sm" 
                   onClick={() => handleFilterChange('pending')}
                 >
                   Pending
                 </Button>
                 <Button 
-                  variant={filterStatus === 'completed' ? 'default' : 'outline'} 
+                  variant={filterStatus === 'completed' ? 'primary' : 'outline'} 
                   size="sm" 
                   onClick={() => handleFilterChange('completed')}
                 >

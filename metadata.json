@@ -1,5 +1,6 @@
 {
   "name": "TabunganSiswa - Sistem Manajemen Tabungan Sekolah",
   "description": "Aplikasi manajemen tabungan siswa berbasis web dengan backend Google Sheets dan Google Apps Script.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

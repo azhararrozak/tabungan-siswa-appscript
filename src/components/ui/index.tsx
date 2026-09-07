@@ -76,8 +76,15 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
   }
 );
 
-export const Card = ({ children, className }: { children: React.ReactNode; className?: string }) => (
-  <div className={cn('bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden', className)}>
+export const Card = ({ 
+  children, 
+  className, 
+  ...props 
+}: React.HTMLAttributes<HTMLDivElement>) => (
+  <div 
+    className={cn('bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden', className)} 
+    {...props}
+  >
     {children}
   </div>
 );

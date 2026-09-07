@@ -48,31 +48,44 @@ export const Students = () => {
     fetchStudents();
   }, []);
 
-  const handleCreateStudent = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreateStudent = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+
+    if (!formData.nis.trim() || !formData.name.trim() || !formData.class.trim()) {
+      alert('Mohon lengkapi data wajib: NIS, Nama Lengkap, dan Kelas.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       if (isEditing && editingId) {
         const res = await studentApi.update(editingId, formData);
-        if (res.success) {
+        if (res && res.success !== false) {
           setIsModalOpen(false);
-          setStudents(prev => prev.map(s => s.id === editingId ? res.data : s));
-          setTimeout(() => fetchStudents(true), 3000);
+          setStudents(prev => prev.map(s => s.id === editingId ? (res.data || { ...s, ...formData }) : s));
+          fetchStudents(true);
+        } else {
+          alert(res?.message || 'Gagal memperbarui data siswa.');
         }
       } else {
         const res = await studentApi.create({
           ...formData,
           status: 'active'
         });
-        if (res.success) {
+        if (res && res.success !== false) {
           setIsModalOpen(false);
           setFormData({ nis: '', name: '', class: '', parent_name: '', phone: '', photo_url: '' });
-          setStudents(prev => [res.data, ...prev]);
-          setTimeout(() => fetchStudents(true), 3000);
+          if (res.data) {
+            setStudents(prev => [res.data, ...prev]);
+          }
+          fetchStudents(true);
+        } else {
+          alert(res?.message || 'Gagal menambahkan siswa.');
         }
       }
-    } catch (error) {
-      alert(isEditing ? 'Gagal memperbarui siswa' : 'Gagal menambahkan siswa');
+    } catch (error: any) {
+      console.error('Submit student error:', error);
+      alert(error.message || (isEditing ? 'Gagal memperbarui siswa' : 'Gagal menambahkan siswa'));
     } finally {
       setIsSubmitting(false);
     }
