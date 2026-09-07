@@ -65,6 +65,9 @@ function doPost(e) {
       case 'createStudent':
         result = createStudent(data);
         break;
+      case 'batchCreateStudents':
+        result = batchCreateStudents(data);
+        break;
       case 'updateStudent':
         result = updateStudent(data);
         break;
@@ -225,6 +228,101 @@ function createStudent(data) {
     balance: 0,
     created_at: date
   };
+}
+
+function batchCreateStudents(data) {
+  const studentsList = data.students || [];
+  if (!Array.isArray(studentsList) || studentsList.length === 0) {
+    throw new Error('Data siswa untuk dikirim tidak boleh kosong');
+  }
+
+  const existingStudents = getStudents();
+  const existingNisMap = new Set(existingStudents.map(s => String(s.nis).trim()));
+
+  // Validate all before insertion
+  studentsList.forEach((item, index) => {
+    const nis = String(item.nis || '').trim();
+    const name = String(item.name || '').trim();
+    const className = String(item.class || '').trim();
+
+    if (!nis || !name || !className) {
+      throw new Error('Siswa ke-' + (index + 1) + ' tidak lengkap (NIS, Nama, dan Kelas wajib diisi)');
+    }
+
+    if (existingNisMap.has(nis)) {
+      throw new Error('Siswa dengan NIS ' + nis + ' sudah terdaftar di database');
+    }
+  });
+
+  const studentsSheet = getSheet('students');
+  const accountsSheet = getSheet('accounts');
+  const now = new Date();
+  const dateStr = now.toISOString();
+
+  const createdStudents = [];
+  const studentRows = [];
+  const accountRows = [];
+
+  studentsList.forEach((item, index) => {
+    const timeStamp = Utilities.formatDate(new Date(now.getTime() + index), "GMT+7", "yyyyMMddHHmmssSSS");
+    const studentId = 'STU' + timeStamp;
+    const accountId = 'ACC' + timeStamp;
+
+    const nis = String(item.nis || '').trim();
+    const name = String(item.name || '').trim();
+    const className = String(item.class || '').trim();
+    const parentName = String(item.parent_name || '').trim();
+    const phone = String(item.phone || '').trim();
+    const photoUrl = String(item.photo_url || '').trim();
+    const status = String(item.status || 'active').trim();
+    const accountNumber = 'ACC' + nis;
+
+    studentRows.push([
+      studentId,
+      nis,
+      name,
+      className,
+      parentName,
+      phone,
+      photoUrl,
+      status,
+      dateStr
+    ]);
+
+    accountRows.push([
+      accountId,
+      studentId,
+      accountNumber,
+      0, // initial_balance
+      0, // current_balance
+      dateStr
+    ]);
+
+    createdStudents.push({
+      id: studentId,
+      nis: nis,
+      name: name,
+      class: className,
+      parent_name: parentName,
+      phone: phone,
+      photo_url: photoUrl,
+      status: status,
+      balance: 0,
+      created_at: dateStr
+    });
+  });
+
+  if (studentRows.length > 0) {
+    const lastStudentRow = studentsSheet.getLastRow();
+    studentsSheet.getRange(lastStudentRow + 1, 1, studentRows.length, studentRows[0].length).setValues(studentRows);
+
+    const lastAccountRow = accountsSheet.getLastRow();
+    accountsSheet.getRange(lastAccountRow + 1, 1, accountRows.length, accountRows[0].length).setValues(accountRows);
+
+    SpreadsheetApp.flush();
+  }
+
+  return createdStudents;
 }
 
 function updateStudent(data) {
