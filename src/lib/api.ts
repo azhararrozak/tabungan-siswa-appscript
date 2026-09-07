@@ -112,6 +112,15 @@ export const studentApi = {
       }),
     });
   },
+  batchCreate: async (students: Omit<Student, 'id' | 'created_at'>[]) => {
+    return request<Student[]>(GAS_API_URL, {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'batchCreateStudents',
+        students,
+      }),
+    });
+  },
 };
 
 export const transactionApi = {
