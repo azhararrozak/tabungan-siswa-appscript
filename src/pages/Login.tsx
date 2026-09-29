@@ -88,7 +88,6 @@ export const Login = () => {
             
             <div className="text-center">
               <p className="text-xs text-slate-400">
-                Admin: admin / admin123<br />
                 Siswa: Gunakan NIS sebagai username & password
               </p>
             </div>
